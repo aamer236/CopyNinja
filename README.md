@@ -28,10 +28,3 @@ A browser extension that enables text selection and copying on websites that res
 - `popup.html` - Extension popup UI
 ```
 
-**7. Add .gitignore (optional but recommended)**
-Create a `.gitignore` file:
-```
-.DS_Store
-*.crx
-*.pem
-node_modules/

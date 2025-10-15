@@ -1,0 +1,7 @@
+**7. Add .gitignore (optional but recommended)**
+Create a `.gitignore` file:
+```
+.DS_Store
+*.crx
+*.pem
+node_modules/
