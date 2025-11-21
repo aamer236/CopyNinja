@@ -1,8 +1,11 @@
-// Enable text selection by removing CSS restrictions
+// Enable text selection and copying aggressively
 (function() {
   'use strict';
 
-  // Remove user-select restrictions via CSS
+  // List of events commonly blocked to prevent selection/copying
+  const events = ['copy', 'cut', 'paste', 'contextmenu', 'selectstart', 'mousedown', 'mouseup'];
+  
+  // 1. Aggressive CSS Injection for user-select on all elements
   const style = document.createElement('style');
   style.textContent = `
     * {
@@ -13,65 +16,109 @@
     }
   `;
   
-  // Add style as early as possible
+  // Inject style as early as possible on the root document element
   if (document.head) {
     document.head.appendChild(style);
   } else {
-    document.addEventListener('DOMContentLoaded', () => {
-      document.head.appendChild(style);
-    });
+    document.documentElement.appendChild(style); 
   }
 
-  // Function to enable all copy/cut/paste events
+
+  // 2. Global Event Overrides (Capture Phase)
   function enableCopyEvents(e) {
-    e.stopPropagation();
-    return true;
+    e.stopPropagation(); // Stop the event from propagating further
+    return true; // Allow the default action (copy/paste)
   }
-
-  // Remove event listeners that block copying
-  const events = ['copy', 'cut', 'paste', 'contextmenu', 'selectstart'];
   
   events.forEach(event => {
+    // Crucial: Use 'true' for capture phase to catch events *before* they reach the blocking element
     document.addEventListener(event, enableCopyEvents, true);
   });
+  
+  // 3. Persistent DOM Cleanup and Attribute Removal
+  function aggressiveCleanup() {
+    
+    // --- Step 3a: Target Root and Major Google Container Elements ---
+    // These elements often hold the main anti-copy attributes/classes.
+    const rootElements = [document.documentElement, document.body];
+    if (document.getElementById('docs-editor-container')) {
+        rootElements.push(document.getElementById('docs-editor-container')); // Google Docs container
+    }
+    if (document.getElementById('sheets-viewport')) {
+        rootElements.push(document.getElementById('sheets-viewport')); // Google Sheets container
+    }
 
-  // Override any inline event handlers
-  function removeInlineHandlers() {
-    const elements = document.querySelectorAll('*');
-    elements.forEach(el => {
+    rootElements.forEach(el => {
+        if (el) {
+            // Remove attributes that block copy
+            el.setAttribute('onselectstart', ''); 
+            el.setAttribute('oncopy', '');
+            el.setAttribute('oncontextmenu', '');
+            el.removeAttribute('unselectable'); 
+            
+            // Force user-select style inline
+            el.style.userSelect = 'text'; 
+            el.style.webkitUserSelect = 'text';
+            
+            // Remove known Google anti-copy classes
+            el.classList.remove('docsshared-no-select', 'docsshared-disabled', 'docs-userselect-none', 'noSelect');
+        }
+    });
+    
+    // --- Step 3b: Target All Elements for Generic Cleanup ---
+    // Query and clean up any element with anti-copy attributes or classes
+    const allElements = document.querySelectorAll('[onselectstart], [oncopy], [oncontextmenu], [unselectable], .docsshared-no-select, .docsshared-disabled, .docs-userselect-none');
+
+    allElements.forEach(el => {
+      el.removeAttribute('onselectstart');
+      el.removeAttribute('oncopy');
+      el.removeAttribute('oncontextmenu');
+      el.removeAttribute('unselectable');
+      el.style.userSelect = 'text';
+      el.style.webkitUserSelect = 'text';
+      el.classList.remove('docsshared-no-select', 'docsshared-disabled', 'docs-userselect-none', 'noSelect');
+    });
+
+    // --- Step 3c: Clear inline event handlers (re-enforcement) ---
+    document.querySelectorAll('*').forEach(el => {
       events.forEach(event => {
         el[`on${event}`] = null;
       });
     });
   }
 
-  // Run immediately and on DOM changes
-  removeInlineHandlers();
+  // Run initial cleanup
+  aggressiveCleanup();
   
-  // Use MutationObserver to handle dynamically added elements
+  // 4. MutationObserver for Dynamic Content
+  // Google Docs/Sheets constantly modifies the DOM and re-applies restrictions. 
+  // This observer ensures the cleanup runs every time the DOM structure or an attribute changes.
   const observer = new MutationObserver(() => {
-    removeInlineHandlers();
+    aggressiveCleanup();
   });
 
   if (document.body) {
     observer.observe(document.body, {
-      childList: true,
-      subtree: true
+      childList: true, // Watch for new elements
+      subtree: true,   // Watch all descendants
+      attributes: true // Crucial: Watch for attribute changes (like class/style)
     });
   } else {
     document.addEventListener('DOMContentLoaded', () => {
       observer.observe(document.body, {
         childList: true,
-        subtree: true
+        subtree: true,
+        attributes: true
       });
     });
   }
 
-  // Override document methods that might block selection
+  // 5. Prototype Override for future event listeners
   const originalAddEventListener = EventTarget.prototype.addEventListener;
   EventTarget.prototype.addEventListener = function(type, listener, options) {
     if (events.includes(type)) {
-      return; // Don't add copy-blocking listeners
+        // Prevent new copy-blocking listeners from ever being attached
+        return; 
     }
     return originalAddEventListener.call(this, type, listener, options);
   };
